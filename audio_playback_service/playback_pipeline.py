@@ -68,6 +68,7 @@ class AudioPlaybackPipeline:
                 self._appsrc.set_property("block", True)
                 self._appsrc.set_property("do-timestamp", True)
                 self._appsrc.set_property("emit-signals", False)
+                self._appsrc.set_property("stream-type", 0)
 
                 queue.set_property("max-size-time", 1000000)
                 queue.set_property("max-size-bytes", 0)
@@ -81,8 +82,16 @@ class AudioPlaybackPipeline:
                 for element in elements:
                     self._pipeline.add(element)
 
-                if not Gst.Element.link_many(*elements):
-                    raise RuntimeError("No se pudo enlazar la pipeline GStreamer")
+                link_chain = [
+                    (self._appsrc, queue, "appsrc->queue"),
+                    (queue, convert, "queue->audioconvert"),
+                    (convert, resample, "audioconvert->audioresample"),
+                    (resample, self._volume, "audioresample->volume"),
+                    (self._volume, sink, "volume->alsasink"),
+                ]
+                for src, dst, name in link_chain:
+                    if not src.link(dst):
+                        raise RuntimeError(f"No se pudo enlazar la pipeline GStreamer en {name}")
 
                 bus = self._pipeline.get_bus()
                 bus.add_signal_watch()
