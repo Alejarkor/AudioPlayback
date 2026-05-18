@@ -76,8 +76,8 @@ class AudioPlaybackPipeline:
                 self._volume.set_property("volume", float(cfg.volume))
                 sink.set_property("sync", False)
                 sink.set_property("async", False)
-                if cfg.output_device:
-                    sink.set_property("device", cfg.output_device)
+                if cfg.effective_output_device:
+                    sink.set_property("device", cfg.effective_output_device)
 
                 for element in elements:
                     self._pipeline.add(element)
