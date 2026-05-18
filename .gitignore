@@ -106,3 +106,5 @@ InitTestScene*.unity*
 /[Aa]ssets/[Ss]ceneDependencyCache*
 __pycache__/
 *.pyc
+__pycache__/
+*.pyc
