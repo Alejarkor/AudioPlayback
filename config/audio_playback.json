@@ -3,9 +3,18 @@
   "listen_bind_ip": "0.0.0.0",
   "listen_port": 1236,
   "sample_rate": 48000,
-  "channels": 2,
+  "channels": 1,
   "bit_depth": 16,
-  "volume": 1.0,
-  "output_device": "default",
-  "inactivity_timeout_s": 2.0
+  "volume": 2.2699999809265137,
+  "output_device": "plughw:CARD=Headset,DEV=0",
+  "inactivity_timeout_s": 2.0,
+  "mqtt_broker": "192.168.28.92",
+  "mqtt_port": 1883,
+  "mqtt_user": "",
+  "mqtt_password": "",
+  "mqtt_keepalive": 60,
+  "mqtt_reconnect_delay": 5,
+  "node_id": "nexor-01",
+  "mqtt_namespace": "nexor/v1",
+  "advertise_host": "192.168.31.66"
 }
