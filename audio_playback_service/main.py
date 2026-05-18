@@ -10,7 +10,6 @@ import time
 from typing import Optional
 
 from .config import AudioPlaybackConfig
-from .device_discovery import find_alsa_playback_device_by_name, list_alsa_playback_devices
 from .mqtt_adapter import AudioPlaybackServiceAdapter
 from .node_runtime import NexorNodeRuntimeConfig
 from .playback_pipeline import AudioPlaybackPipeline, PipelineState
@@ -66,7 +65,8 @@ class AudioPlaybackService:
         logger.info(f"  Audio Playback Service — node_id={self._cfg.node_id}")
         logger.info(f"  Listen UDP: {self._cfg.listen_bind_ip}:{self._cfg.listen_port} ({self._cfg.protocol})")
         logger.info(f"  Audio: {self._cfg.sample_rate}Hz {self._cfg.channels}ch {self._cfg.bit_depth}bit")
-        logger.info(f"  Output device requested: {self._cfg.output_device_name or self._cfg.output_device_override or self._cfg.output_device_resolved}")
+        logger.info(f"  Output device: {self._cfg.output_device}")
+        logger.info(f"  Reference bus: {'on' if self._cfg.reference_bus_enabled else 'off'} ({self._cfg.reference_bus_path})")
         if self._simulate:
             logger.info("  MODO SIMULACIÓN — sin reproducción real")
         logger.info("=" * 60)
@@ -77,20 +77,11 @@ class AudioPlaybackService:
                 logger.error(f"Config inválida: {e}")
             return 1
 
-        if not self._simulate:
-            resolved = self._resolve_output_device()
-            if not resolved:
-                self._last_error = "Playback output device not found"
-                logger.error("No se pudo resolver el dispositivo de salida ALSA")
-                return 1
-            self._cfg.output_device_resolved = resolved
-            logger.info(f"Dispositivo de salida ALSA resuelto: {resolved}")
-
         if not self._mqtt.start():
             logger.warning("No se pudo conectar a MQTT — continuando sin control remoto")
 
         self._mqtt.publish_state("STARTING", healthy=False)
-        self._mqtt.publish_event("service_starting", details={"simulate": self._simulate})
+        self._mqtt.publish_event("service_starting", details={"simulate": self._simulate, "reference_bus_enabled": self._cfg.reference_bus_enabled})
         self._mqtt.publish_capabilities()
         self._mqtt.publish_config_reported(self._cfg)
         self._mqtt.publish_endpoint(self._cfg)
@@ -130,27 +121,6 @@ class AudioPlaybackService:
     def _signal_handler(self, signum, frame) -> None:
         logger.info(f"Señal recibida: {signal.Signals(signum).name}")
         self._shutdown_event.set()
-
-    def _resolve_output_device(self) -> Optional[str]:
-        if self._cfg.output_device_override:
-            logger.info(f"Usando output_device_override: {self._cfg.output_device_override}")
-            return self._cfg.output_device_override
-
-        if self._cfg.output_device_name:
-            resolved = find_alsa_playback_device_by_name(self._cfg.output_device_name)
-            if resolved:
-                return resolved
-
-            devices = list_alsa_playback_devices()
-            if devices:
-                logger.warning(f"'{self._cfg.output_device_name}' no encontrado. Dispositivos de playback disponibles:")
-                for d in devices:
-                    logger.warning(f"  {d['alsa_id']}: {d['description']}")
-            else:
-                logger.warning("No se encontraron dispositivos ALSA de playback")
-            return None
-
-        return self._cfg.output_device_resolved or "default"
 
     def _start_runtime(self, trigger: str) -> bool:
         if not self._receiver.start(self._cfg.listen_bind_ip, self._cfg.listen_port):
@@ -224,25 +194,15 @@ class AudioPlaybackService:
             self._mqtt.publish_event("config_apply_failed", severity="error", details={"errors": errors, "delta": delta})
             return
 
-        if not self._simulate:
-            original_resolved = self._cfg.output_device_resolved
-            self._cfg = new_cfg
-            resolved = self._resolve_output_device()
-            if not resolved:
-                self._cfg.output_device_resolved = original_resolved
-                self._mqtt.publish_event("config_apply_failed", severity="error", details={"error": "output_device_not_found", "delta": delta})
-                return
-            new_cfg.output_device_resolved = resolved
-        else:
-            self._cfg = new_cfg
-
         hot_changes = {k: v for k, v in delta.items() if k in hot_fields}
         cold_changes = {k: v for k, v in delta.items() if k not in hot_fields}
+
+        self._cfg = new_cfg
+        self._mqtt._cfg = new_cfg
 
         if "volume" in hot_changes and not self._simulate:
             self._pipeline.set_volume(self._cfg.volume)
 
-        self._mqtt._cfg = self._cfg
         if self._config_path:
             self._cfg.save(self._config_path)
         else:
