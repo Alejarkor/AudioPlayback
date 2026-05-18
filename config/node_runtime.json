@@ -1,0 +1,13 @@
+{
+  "node_id": "nexor-01",
+  "mqtt_namespace": "nexor/v1",
+  "manager_id": "serviceManager",
+  "mqtt_broker": "192.168.28.92",
+  "mqtt_port": 1883,
+  "mqtt_user": "",
+  "mqtt_password": "",
+  "mqtt_keepalive": 60,
+  "mqtt_reconnect_delay": 5,
+  "advertise_host": "192.168.31.66",
+  "hostname": "jetson-nexor-01"
+}
