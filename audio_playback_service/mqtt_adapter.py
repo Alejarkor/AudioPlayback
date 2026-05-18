@@ -33,6 +33,9 @@ CAPABILITIES = {
         "volume": {"type": "float", "min": 0.0, "max": 4.0},
         "output_device": {"type": "string"},
         "inactivity_timeout_s": {"type": "float", "min": 0.1, "max": 60.0},
+        "reference_bus_enabled": {"type": "boolean"},
+        "reference_bus_path": {"type": "string"},
+        "reference_frame_ms": {"type": "enum", "values": [10, 20]}
     },
 }
 
@@ -129,6 +132,7 @@ class AudioPlaybackServiceAdapter:
             "healthy": healthy,
             "transport": self._cfg.protocol,
             "volume": self._cfg.volume,
+            "reference_bus_enabled": self._cfg.reference_bus_enabled,
             "ts": _now_iso(),
         }
         if pid is not None:
@@ -145,6 +149,7 @@ class AudioPlaybackServiceAdapter:
 
     def publish_capabilities(self) -> None:
         caps = dict(CAPABILITIES)
+        caps["reference_bus_shared"] = True
         caps["ts"] = _now_iso()
         self._publish(self._cfg.mqtt_capabilities_topic, caps, qos=1, retain=True)
 
@@ -159,6 +164,8 @@ class AudioPlaybackServiceAdapter:
             "channels": cfg.channels,
             "bit_depth": cfg.bit_depth,
             "output_device": cfg.output_device,
+            "reference_bus_enabled": cfg.reference_bus_enabled,
+            "reference_bus_path": cfg.reference_bus_path,
             "pid": os.getpid(),
             "ts": _now_iso(),
         }
