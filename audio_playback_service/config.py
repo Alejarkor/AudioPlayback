@@ -25,15 +25,15 @@ class AudioPlaybackConfig:
     listen_port: int = 1236
 
     sample_rate: int = 48000
-    channels: int = 2
+    channels: int = 1
     bit_depth: int = 16
     volume: float = 1.0
-
-    output_device_name: str = ""
-    output_device_override: str = ""
-    output_device_resolved: str = "default"
-
+    output_device: str = "default"
     inactivity_timeout_s: float = 2.0
+
+    reference_bus_enabled: bool = True
+    reference_bus_path: str = "/tmp/nexor_audio_reference_bus"
+    reference_frame_ms: int = 10
 
     mqtt_broker: str = "127.0.0.1"
     mqtt_port: int = 1883
@@ -57,10 +57,8 @@ class AudioPlaybackConfig:
     @classmethod
     def from_dict(cls, data: dict) -> "AudioPlaybackConfig":
         normalized = dict(data)
-        legacy_output_device = normalized.pop("output_device", None)
-        if legacy_output_device is not None and "output_device_override" not in normalized and "output_device_name" not in normalized:
-            normalized["output_device_override"] = legacy_output_device
-
+        if "output_device_override" in normalized and "output_device" not in normalized:
+            normalized["output_device"] = normalized["output_device_override"] or normalized.get("output_device", "default")
         known = set(cls.__dataclass_fields__.keys())
         return cls(**{k: v for k, v in normalized.items() if k in known})
 
@@ -102,10 +100,6 @@ class AudioPlaybackConfig:
     @property
     def gst_format(self) -> str:
         return "S24LE" if self.bit_depth == 24 else "S16LE"
-
-    @property
-    def effective_output_device(self) -> str:
-        return self.output_device_resolved or self.output_device_override or "default"
 
     @property
     def mqtt_base_topic(self) -> str:
@@ -161,10 +155,12 @@ class AudioPlaybackConfig:
             errors.append(f"volume fuera de rango: {self.volume}")
         if not (0.1 <= float(self.inactivity_timeout_s) <= 60.0):
             errors.append(f"inactivity_timeout_s fuera de rango: {self.inactivity_timeout_s}")
+        if self.reference_frame_ms not in (10, 20):
+            errors.append(f"reference_frame_ms inválido: {self.reference_frame_ms}")
+        if not self.output_device:
+            errors.append("output_device vacío")
         if not self.node_id:
             errors.append("node_id vacío")
         if not self.mqtt_namespace:
             errors.append("mqtt_namespace vacío")
-        if not (self.output_device_name or self.output_device_override or self.output_device_resolved):
-            errors.append("No se ha definido ningún selector de dispositivo de salida")
         return errors
