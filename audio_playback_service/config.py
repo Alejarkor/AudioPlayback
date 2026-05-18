@@ -4,7 +4,6 @@ import json
 import logging
 import os
 from dataclasses import dataclass, asdict
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,11 @@ class AudioPlaybackConfig:
     channels: int = 2
     bit_depth: int = 16
     volume: float = 1.0
-    output_device: str = "default"
+
+    output_device_name: str = ""
+    output_device_override: str = ""
+    output_device_resolved: str = "default"
+
     inactivity_timeout_s: float = 2.0
 
     mqtt_broker: str = "127.0.0.1"
@@ -53,8 +56,13 @@ class AudioPlaybackConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "AudioPlaybackConfig":
+        normalized = dict(data)
+        legacy_output_device = normalized.pop("output_device", None)
+        if legacy_output_device is not None and "output_device_override" not in normalized and "output_device_name" not in normalized:
+            normalized["output_device_override"] = legacy_output_device
+
         known = set(cls.__dataclass_fields__.keys())
-        return cls(**{k: v for k, v in data.items() if k in known})
+        return cls(**{k: v for k, v in normalized.items() if k in known})
 
     @classmethod
     def load(cls, path: str = DEFAULT_CONFIG_PATH) -> "AudioPlaybackConfig":
@@ -82,7 +90,9 @@ class AudioPlaybackConfig:
         return self.from_dict(current)
 
     def save(self, path: str = DEFAULT_CONFIG_PATH) -> None:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         tmp = f"{path}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
@@ -92,6 +102,10 @@ class AudioPlaybackConfig:
     @property
     def gst_format(self) -> str:
         return "S24LE" if self.bit_depth == 24 else "S16LE"
+
+    @property
+    def effective_output_device(self) -> str:
+        return self.output_device_resolved or self.output_device_override or "default"
 
     @property
     def mqtt_base_topic(self) -> str:
@@ -151,4 +165,6 @@ class AudioPlaybackConfig:
             errors.append("node_id vacío")
         if not self.mqtt_namespace:
             errors.append("mqtt_namespace vacío")
+        if not (self.output_device_name or self.output_device_override or self.output_device_resolved):
+            errors.append("No se ha definido ningún selector de dispositivo de salida")
         return errors
