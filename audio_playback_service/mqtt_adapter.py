@@ -22,6 +22,7 @@ CAPABILITIES = {
         "restart",
         "get_state",
         "apply_config",
+        "clear_buffer",
     ],
     "config_schema": {
         "protocol": {"type": "enum", "values": ["raw_udp"]},
@@ -33,9 +34,11 @@ CAPABILITIES = {
         "volume": {"type": "float", "min": 0.0, "max": 4.0},
         "output_device": {"type": "string"},
         "inactivity_timeout_s": {"type": "float", "min": 0.1, "max": 60.0},
-        "reference_bus_enabled": {"type": "boolean"},
-        "reference_bus_path": {"type": "string"},
-        "reference_frame_ms": {"type": "enum", "values": [10, 20]}
+        "buffer_frame_ms": {"type": "enum", "values": [5, 10, 20]},
+        "target_buffered_frames": {"type": "integer", "min": 1, "max": 50},
+        "max_buffered_frames": {"type": "integer", "min": 1, "max": 100},
+        "hard_reset_buffered_frames": {"type": "integer", "min": 1, "max": 200},
+        "clear_buffer_on_timeout": {"type": "boolean"}
     },
 }
 
@@ -51,6 +54,7 @@ class AudioPlaybackServiceAdapter:
                  on_standby: Optional[Callable] = None,
                  on_stop: Optional[Callable] = None,
                  on_restart: Optional[Callable] = None,
+                 on_clear_buffer: Optional[Callable[[], None]] = None,
                  on_apply_config: Optional[Callable[[dict], None]] = None,
                  get_state_cb: Optional[Callable[[], dict]] = None) -> None:
         self._cfg = cfg
@@ -63,6 +67,7 @@ class AudioPlaybackServiceAdapter:
         self._on_standby = on_standby or (lambda: None)
         self._on_stop = on_stop or (lambda: None)
         self._on_restart = on_restart or (lambda: None)
+        self._on_clear_buffer = on_clear_buffer or (lambda: None)
         self._on_apply_config = on_apply_config or (lambda d: None)
         self._get_state_cb = get_state_cb or (lambda: {})
 
@@ -132,7 +137,9 @@ class AudioPlaybackServiceAdapter:
             "healthy": healthy,
             "transport": self._cfg.protocol,
             "volume": self._cfg.volume,
-            "reference_bus_enabled": self._cfg.reference_bus_enabled,
+            "buffer_frame_ms": self._cfg.buffer_frame_ms,
+            "queued_target_frames": self._cfg.target_buffered_frames,
+            "queued_max_frames": self._cfg.max_buffered_frames,
             "ts": _now_iso(),
         }
         if pid is not None:
@@ -149,7 +156,6 @@ class AudioPlaybackServiceAdapter:
 
     def publish_capabilities(self) -> None:
         caps = dict(CAPABILITIES)
-        caps["reference_bus_shared"] = True
         caps["ts"] = _now_iso()
         self._publish(self._cfg.mqtt_capabilities_topic, caps, qos=1, retain=True)
 
@@ -164,8 +170,7 @@ class AudioPlaybackServiceAdapter:
             "channels": cfg.channels,
             "bit_depth": cfg.bit_depth,
             "output_device": cfg.output_device,
-            "reference_bus_enabled": cfg.reference_bus_enabled,
-            "reference_bus_path": cfg.reference_bus_path,
+            "buffer_frame_ms": cfg.buffer_frame_ms,
             "pid": os.getpid(),
             "ts": _now_iso(),
         }
@@ -230,6 +235,7 @@ class AudioPlaybackServiceAdapter:
             "restart": self._cmd_restart,
             "get_state": self._cmd_get_state,
             "apply_config": self._cmd_apply_config,
+            "clear_buffer": self._cmd_clear_buffer,
         }
         handler = handlers.get(action)
         if handler is None:
@@ -278,6 +284,10 @@ class AudioPlaybackServiceAdapter:
             return
         self.publish_event("config_applying", details={"delta": params, "msg_id": msg_id})
         self._on_apply_config(params)
+
+    def _cmd_clear_buffer(self, params: dict, msg_id: str) -> None:
+        self.publish_event("clear_buffer_requested", details={"msg_id": msg_id})
+        self._on_clear_buffer()
 
     def _handle_desired_config(self, payload: dict) -> None:
         config_delta = payload.get("config", {})
