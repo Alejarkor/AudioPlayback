@@ -31,9 +31,11 @@ class AudioPlaybackConfig:
     output_device: str = "default"
     inactivity_timeout_s: float = 2.0
 
-    reference_bus_enabled: bool = True
-    reference_bus_path: str = "/tmp/nexor_audio_reference_bus"
-    reference_frame_ms: int = 10
+    buffer_frame_ms: int = 10
+    target_buffered_frames: int = 3
+    max_buffered_frames: int = 6
+    hard_reset_buffered_frames: int = 10
+    clear_buffer_on_timeout: bool = True
 
     mqtt_broker: str = "127.0.0.1"
     mqtt_port: int = 1883
@@ -155,8 +157,14 @@ class AudioPlaybackConfig:
             errors.append(f"volume fuera de rango: {self.volume}")
         if not (0.1 <= float(self.inactivity_timeout_s) <= 60.0):
             errors.append(f"inactivity_timeout_s fuera de rango: {self.inactivity_timeout_s}")
-        if self.reference_frame_ms not in (10, 20):
-            errors.append(f"reference_frame_ms inválido: {self.reference_frame_ms}")
+        if self.buffer_frame_ms not in (5, 10, 20):
+            errors.append(f"buffer_frame_ms inválido: {self.buffer_frame_ms}")
+        if self.target_buffered_frames < 1:
+            errors.append("target_buffered_frames debe ser >= 1")
+        if self.max_buffered_frames < self.target_buffered_frames:
+            errors.append("max_buffered_frames debe ser >= target_buffered_frames")
+        if self.hard_reset_buffered_frames < self.max_buffered_frames:
+            errors.append("hard_reset_buffered_frames debe ser >= max_buffered_frames")
         if not self.output_device:
             errors.append("output_device vacío")
         if not self.node_id:
