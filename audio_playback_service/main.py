@@ -50,6 +50,7 @@ class AudioPlaybackService:
             on_standby=self._handle_standby,
             on_stop=self._handle_stop,
             on_restart=self._handle_restart,
+            on_clear_buffer=self._handle_clear_buffer,
             on_apply_config=self._handle_apply_config,
             get_state_cb=self._get_state_dict,
         )
@@ -66,7 +67,9 @@ class AudioPlaybackService:
         logger.info(f"  Listen UDP: {self._cfg.listen_bind_ip}:{self._cfg.listen_port} ({self._cfg.protocol})")
         logger.info(f"  Audio: {self._cfg.sample_rate}Hz {self._cfg.channels}ch {self._cfg.bit_depth}bit")
         logger.info(f"  Output device: {self._cfg.output_device}")
-        logger.info(f"  Reference bus: {'on' if self._cfg.reference_bus_enabled else 'off'} ({self._cfg.reference_bus_path})")
+        logger.info(
+            f"  Buffer: frame={self._cfg.buffer_frame_ms}ms target={self._cfg.target_buffered_frames} max={self._cfg.max_buffered_frames} hard_reset={self._cfg.hard_reset_buffered_frames}"
+        )
         if self._simulate:
             logger.info("  MODO SIMULACIÓN — sin reproducción real")
         logger.info("=" * 60)
@@ -81,7 +84,7 @@ class AudioPlaybackService:
             logger.warning("No se pudo conectar a MQTT — continuando sin control remoto")
 
         self._mqtt.publish_state("STARTING", healthy=False)
-        self._mqtt.publish_event("service_starting", details={"simulate": self._simulate, "reference_bus_enabled": self._cfg.reference_bus_enabled})
+        self._mqtt.publish_event("service_starting", details={"simulate": self._simulate})
         self._mqtt.publish_capabilities()
         self._mqtt.publish_config_reported(self._cfg)
         self._mqtt.publish_endpoint(self._cfg)
@@ -143,9 +146,10 @@ class AudioPlaybackService:
         self._mqtt.publish_event("waiting_for_source", details={"trigger": trigger, "listen_port": self._cfg.listen_port})
         return True
 
-    def _stop_runtime(self) -> None:
+    def _stop_runtime(self, reason: str = "stop") -> None:
         self._receiver.stop()
         if not self._simulate:
+            self._pipeline.clear_buffer(reason=reason)
             self._pipeline.stop()
         self._source_active = False
         self._start_time = None
@@ -160,23 +164,29 @@ class AudioPlaybackService:
 
     def _handle_standby(self) -> None:
         logger.info("Pasando servicio a IDLE")
-        self._stop_runtime()
+        self._stop_runtime(reason="standby")
         self._idle = True
         self._mqtt.publish_state("IDLE", healthy=True, pid=os.getpid())
         self._mqtt.publish_event("service_standby", details={"trigger": "mqtt_command"})
 
     def _handle_stop(self) -> None:
         logger.info("Parando servicio")
-        self._stop_runtime()
+        self._stop_runtime(reason="stop_command")
         self._idle = False
         self._mqtt.publish_state("STOPPED", healthy=False, pid=os.getpid())
         self._mqtt.publish_event("service_stopped", details={"trigger": "mqtt_command"})
 
     def _handle_restart(self) -> None:
         logger.info("Reiniciando servicio")
-        self._stop_runtime()
+        self._stop_runtime(reason="restart_command")
         self._start_runtime(trigger="restart_command")
         self._mqtt.publish_event("service_restarted", details={"trigger": "mqtt_command", "pid": os.getpid()})
+
+    def _handle_clear_buffer(self) -> None:
+        if self._simulate:
+            return
+        self._pipeline.clear_buffer(reason="mqtt_command")
+        self._mqtt.publish_event("buffer_cleared", details={"trigger": "mqtt_command"})
 
     def _handle_apply_config(self, delta: dict) -> None:
         logger.info(f"Aplicando config delta: {delta}")
@@ -210,7 +220,7 @@ class AudioPlaybackService:
 
         if cold_changes and self._runtime_status() not in ("IDLE", "STOPPED"):
             logger.info(f"Reiniciando runtime por cambio de config: {list(cold_changes.keys())}")
-            self._stop_runtime()
+            self._stop_runtime(reason="config_change")
             if not self._start_runtime(trigger="config_applied"):
                 return
         elif self._idle:
@@ -242,6 +252,8 @@ class AudioPlaybackService:
         if self._source_active and self._receiver.has_timed_out(self._cfg.inactivity_timeout_s):
             self._source_active = False
             if not self._simulate:
+                if self._cfg.clear_buffer_on_timeout:
+                    self._pipeline.clear_buffer(reason="source_timeout")
                 self._pipeline.mark_waiting_source()
             self._mqtt.publish_state("WAITING_SOURCE", healthy=True, pid=os.getpid(), uptime_s=self._uptime_seconds())
             self._mqtt.publish_event("source_timeout", severity="warning", details={"timeout_s": self._cfg.inactivity_timeout_s})
