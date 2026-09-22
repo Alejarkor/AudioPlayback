@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-SERVICE_NAME = "audio_playback"
+SERVICE_NAME = "audio_playback_streaming"
 
 CAPABILITIES = {
     "service": SERVICE_NAME,
@@ -97,6 +97,9 @@ class AudioPlaybackServiceAdapter:
         client.on_disconnect = self._on_disconnect
         client.on_message = self._on_message
         self._client = client
+
+        if cfg.mqtt_tls_enabled:
+            client.tls_set(ca_certs=cfg.mqtt_tls_ca_file or None)
 
         try:
             client.connect(cfg.mqtt_broker, cfg.mqtt_port, cfg.mqtt_keepalive)

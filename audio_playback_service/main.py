@@ -9,9 +9,8 @@ import threading
 import time
 from typing import Optional
 
-from .config import AudioPlaybackConfig
+from .config import AudioPlaybackConfig, DEFAULT_CONFIG_PATH
 from .mqtt_adapter import AudioPlaybackServiceAdapter
-from .node_runtime import NexorNodeRuntimeConfig
 from .playback_pipeline import AudioPlaybackPipeline, PipelineState
 from .udp_receiver import UdpAudioReceiver
 
@@ -213,11 +212,6 @@ class AudioPlaybackService:
         if "volume" in hot_changes and not self._simulate:
             self._pipeline.set_volume(self._cfg.volume)
 
-        if self._config_path:
-            self._cfg.save(self._config_path)
-        else:
-            self._cfg.save()
-
         if cold_changes and self._runtime_status() not in ("IDLE", "STOPPED"):
             logger.info(f"Reiniciando runtime por cambio de config: {list(cold_changes.keys())}")
             self._stop_runtime(reason="config_change")
@@ -297,7 +291,7 @@ class AudioPlaybackService:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Servicio de recepción y reproducción de audio (Nexor)")
-    parser.add_argument("--config", "-c", default=None, help="Ruta al fichero de configuración JSON")
+    parser.add_argument("--config", "-c", default=DEFAULT_CONFIG_PATH, help="Ruta al fichero de configuración JSON")
     parser.add_argument("--simulate", "-s", action="store_true", help="Modo simulación")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Nivel de log")
     args = parser.parse_args()
@@ -305,17 +299,11 @@ def main() -> int:
     logging.getLogger().setLevel(getattr(logging, args.log_level))
 
     config_path = args.config
-    if config_path:
+    try:
         cfg = AudioPlaybackConfig.load(config_path)
-    else:
-        cfg = AudioPlaybackConfig.load()
-
-    node_runtime = NexorNodeRuntimeConfig.load_with_env_overrides()
-    runtime_errors = node_runtime.validate()
-    if runtime_errors:
-        for err in runtime_errors:
-            logger.warning(f"Node runtime inválida: {err}")
-    cfg = cfg.apply_common_overrides(node_runtime.to_playback_overrides())
+    except ValueError as error:
+        logger.error("Configuración inválida: %s", error)
+        return 2
 
     service = AudioPlaybackService(cfg, simulate=args.simulate)
     service.set_config_path(config_path)

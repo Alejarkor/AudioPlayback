@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "advertise_host": "192.168.31.66",
+  "protocol": "raw_udp",
+  "listen_bind_ip": "0.0.0.0",
+  "listen_port": 1236,
+  "sample_rate": 48000,
+  "channels": 1,
+  "bit_depth": 16,
+  "volume": 1.0,
+  "output_device": "default",
+  "inactivity_timeout_s": 2.0,
+  "buffer_frame_ms": 10,
+  "target_buffered_frames": 3,
+  "max_buffered_frames": 6,
+  "hard_reset_buffered_frames": 10,
+  "clear_buffer_on_timeout": true
+}
